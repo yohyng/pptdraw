@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "buildCommand": "echo 'static site'",
+  "installCommand": "echo 'no install'",
   "outputDirectory": ".",
   "headers": [
     {
