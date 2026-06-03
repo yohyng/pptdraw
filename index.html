@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PPTX Pen Annotator</title>
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <meta name="theme-color" content="#0f172a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            touch-action: none;
+            overflow: hidden;
+        }
+        .slide-container {
+            position: relative;
+            user-select: none;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+            background: #1e293b;
+        }
+        canvas { cursor: crosshair; }
+        .mobile-touch-target { min-width: 44px; min-height: 44px; }
+        #sidebar { transition: transform 0.25s ease; }
+        #sidebar.hidden-mobile { transform: translateX(-100%); }
+        .bg-slate-850 { background-color: #1a2234; }
+        .border-slate-850 { border-color: #1a2234; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen w-screen select-none">
+
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 h-12 min-h-[3rem] px-3 flex items-center justify-between z-10 shrink-0">
+        <div class="flex items-center gap-2">
+            <div class="bg-orange-600 text-white p-1 rounded-md">
+                <i data-lucide="presentation" class="w-4 h-4"></i>
+            </div>
+            <h1 class="font-bold text-xs md:text-sm text-white flex items-center gap-1.5">
+                PPTX Pen Merge
+                <span class="text-[9px] bg-slate-800 text-orange-400 border border-slate-700 px-1.5 py-0.5 rounded-full font-mono">Mobile</span>
+            </h1>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <span id="current-filename" class="text-[10px] text-slate-400 truncate max-w-[100px] hidden sm:inline"></span>
+            <button id="btn-settings" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-200 transition mobile-touch-target flex items-center justify-center" title="設定">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-merge" class="bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 transition shadow-md mobile-touch-target">
+                <i data-lucide="combine" class="w-3.5 h-3.5"></i>
+                <span>保存</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <div class="flex-1 flex overflow-hidden relative min-h-0">
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-40 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 z-20 absolute md:relative h-full left-0 hidden-mobile md:transform-none">
+            <div class="p-2 border-b border-slate-800 flex items-center justify-between shrink-0">
+                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider">スライド</span>
+                <button id="btn-close-sidebar" class="md:hidden text-slate-400 p-1 mobile-touch-target flex items-center justify-center">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div id="thumbnail-list" class="flex-1 overflow-y-auto p-1.5 space-y-2"></div>
+        </aside>
+
+        <!-- Canvas area -->
+        <main class="flex-1 flex flex-col bg-slate-950 relative overflow-hidden min-w-0">
+
+            <!-- Sub-toolbar -->
+            <div class="bg-slate-900/90 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 z-10 text-xs shrink-0">
+                <div class="flex items-center gap-1.5">
+                    <button id="btn-toggle-sidebar" class="bg-slate-800 p-1.5 rounded text-slate-300 hover:bg-slate-700 transition mobile-touch-target flex items-center justify-center">
+                        <i data-lucide="menu" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <span id="zoom-level" class="text-[10px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">100%</span>
+                    <button id="btn-reset-zoom" class="text-[10px] text-slate-400 hover:text-white flex items-center gap-0.5 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 mobile-touch-target">
+                        <i data-lucide="maximize-2" class="w-3 h-3"></i> フィット
+                    </button>
+                </div>
+                <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                    <button id="mode-auto" class="px-2 py-1 rounded text-[10px] font-bold transition bg-orange-600 text-white mobile-touch-target">🖊 自動判別</button>
+                    <button id="mode-navigate" class="px-2 py-1 rounded text-[10px] font-medium transition text-slate-500 hover:text-slate-300 mobile-touch-target">🖐 下のPPT操作</button>
+                </div>
+            </div>
+
+            <!-- Input status bar -->
+            <div id="input-status-bar" class="bg-slate-900/50 border-b border-slate-800 px-3 py-1 text-[10px] text-slate-400 flex items-center justify-between shrink-0">
+                <span class="flex items-center gap-1">
+                    <span id="pen-indicator" class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+                    ペン: <strong id="pen-status" class="text-slate-200 ml-1">待機中</strong>
+                </span>
+                <span>指タッチ: <strong class="text-slate-200">2本指=拡大縮小 / 1本指=移動</strong></span>
+            </div>
+
+            <!-- Workspace -->
+            <div id="workspace" class="flex-1 relative overflow-hidden flex items-center justify-center p-4">
+                <div id="slide-container" class="slide-container origin-center">
+                    <!-- Static slide view -->
+                    <div id="pptx-slide-view" class="w-full h-full bg-white select-none pointer-events-none absolute inset-0 overflow-hidden rounded-sm"></div>
+                    <!-- Live OneDrive view -->
+                    <div id="pptx-live-view-container" class="absolute inset-0 hidden">
+                        <iframe id="live-powerpoint-iframe" class="w-full h-full border-none" src="" allowfullscreen></iframe>
+                        <div id="live-mock-overlay" class="absolute inset-0 bg-white flex flex-col justify-between p-4 text-slate-900">
+                            <div class="flex justify-between items-center border-b border-slate-200 pb-1 text-[10px]">
+                                <span class="font-bold text-orange-600">● PowerPoint Live View</span>
+                                <span class="text-green-600">● オンライン同期中</span>
+                            </div>
+                            <div class="flex-1 flex flex-col items-center justify-center text-center p-4">
+                                <i data-lucide="presentation" class="w-8 h-8 text-slate-300 mb-2"></i>
+                                <h3 class="font-bold text-sm" id="live-slide-title">スライド</h3>
+                                <p class="text-[10px] text-slate-500 mt-2 max-w-xs">設定からOneDrive埋め込みURLを入力すると、実際のPowerPointが表示されます。</p>
+                            </div>
+                            <div class="text-[9px] text-slate-400 border-t border-slate-100 pt-1 flex justify-between">
+                                <span id="live-slide-indicator">Slide 1 / 4</span>
+                                <span>自動同期</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Drawing canvas -->
+                    <canvas id="pen-canvas" class="absolute inset-0 touch-none z-10" style="width:100%;height:100%"></canvas>
+                </div>
+            </div>
+
+            <!-- Bottom toolbar -->
+            <div class="bg-slate-900 border-t border-slate-800 px-2 py-2 flex items-center justify-between gap-1 z-10 shrink-0">
+                <!-- Colors -->
+                <div class="flex gap-1.5 items-center">
+                    <button class="color-btn w-9 h-9 rounded-full border-2 border-white shadow-inner mobile-touch-target" style="background:#dc2626" data-color="#dc2626"></button>
+                    <button class="color-btn w-9 h-9 rounded-full border-2 border-transparent mobile-touch-target" style="background:#2563eb" data-color="#2563eb"></button>
+                    <button class="color-btn w-9 h-9 rounded-full border-2 border-transparent mobile-touch-target" style="background:#059669" data-color="#059669"></button>
+                    <button class="color-btn w-9 h-9 rounded-full border-2 border-transparent mobile-touch-target" style="background:#eab308" data-color="#eab308"></button>
+                    <button class="color-btn w-9 h-9 rounded-full border-2 border-transparent mobile-touch-target" style="background:#0f172a;border-color:#475569" data-color="#0f172a"></button>
+                    <label class="w-9 h-9 rounded-full border-2 border-dashed border-slate-600 flex items-center justify-center cursor-pointer mobile-touch-target overflow-hidden" title="カスタム色">
+                        <input type="color" id="custom-color-input" value="#dc2626" class="opacity-0 absolute w-0 h-0">
+                        <span class="text-[9px] text-slate-400">色</span>
+                    </label>
+                </div>
+                <!-- Size -->
+                <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 shrink-0">
+                    <button class="size-btn px-2.5 py-1.5 text-xs rounded text-slate-400 mobile-touch-target" data-size="2">細</button>
+                    <button class="size-btn px-2.5 py-1.5 text-xs rounded bg-slate-800 text-white font-bold mobile-touch-target" data-size="5">中</button>
+                    <button class="size-btn px-2.5 py-1.5 text-xs rounded text-slate-400 mobile-touch-target" data-size="12">太</button>
+                </div>
+                <!-- Tools -->
+                <div class="flex items-center gap-1 shrink-0">
+                    <button id="btn-eraser" class="p-2.5 bg-slate-800 text-slate-300 rounded-lg mobile-touch-target flex items-center justify-center" title="消しゴム">
+                        <i data-lucide="eraser" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btn-undo" class="p-2.5 bg-slate-800 text-slate-300 rounded-lg mobile-touch-target flex items-center justify-center" title="元に戻す">
+                        <i data-lucide="undo" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btn-clear" class="p-2.5 bg-slate-800 text-red-400 rounded-lg mobile-touch-target flex items-center justify-center" title="クリア">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btn-paste-image" class="p-2.5 bg-slate-800 text-slate-300 rounded-lg mobile-touch-target flex items-center justify-center" title="画像を貼り付け">
+                        <i data-lucide="image-plus" class="w-4 h-4"></i>
+                    </button>
+                    <input type="file" id="image-file-input" accept="image/*" class="hidden">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-xl overflow-hidden shadow-2xl">
+            <div class="p-3 border-b border-slate-800 flex justify-between items-center">
+                <h3 class="font-bold text-xs text-white flex items-center gap-1.5">
+                    <i data-lucide="settings" class="text-orange-500 w-4 h-4"></i> 設定
+                </h3>
+                <button class="close-settings text-slate-400 p-1 mobile-touch-target flex items-center justify-center">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-4 text-[11px] text-slate-300">
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1.5 uppercase text-[9px] tracking-wider">OneDrive 埋め込みURL</label>
+                    <textarea id="input-embed-url" rows="3" placeholder="https://onedrive.live.com/embed?cid=..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 focus:outline-none focus:border-orange-500 font-mono text-[10px] resize-none"></textarea>
+                    <div class="flex gap-1.5 mt-1.5">
+                        <button id="btn-demo-url" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded transition text-[10px]">デモURL</button>
+                        <button id="btn-clear-url" class="text-red-400 hover:text-red-300 px-2 py-1 text-[10px]">クリア</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1.5 uppercase text-[9px] tracking-wider">バックエンドAPI URL</label>
+                    <input type="url" id="input-api-url" value="http://localhost:5000" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 focus:outline-none focus:border-orange-500 font-mono text-[10px]">
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1.5 uppercase text-[9px] tracking-wider">表示モード</label>
+                    <div class="grid grid-cols-2 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button id="view-static" class="py-1.5 rounded text-[10px] font-bold bg-orange-600 text-white transition">画像（デモ）</button>
+                        <button id="view-live" class="py-1.5 rounded text-[10px] text-slate-500 hover:text-slate-300 transition">OneDrive Live</button>
+                    </div>
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-800 flex justify-end gap-2">
+                <button class="close-settings px-3 py-1.5 bg-slate-800 text-slate-300 rounded text-[11px] mobile-touch-target">閉じる</button>
+                <button id="btn-save-settings" class="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded text-[11px] mobile-touch-target">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge Result Modal -->
+    <div id="merge-modal" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-xl overflow-hidden shadow-2xl">
+            <div class="p-3 border-b border-slate-800 flex justify-between items-center">
+                <h3 class="font-bold text-xs text-white flex items-center gap-1.5">
+                    <i data-lucide="package-open" class="text-orange-500 w-4 h-4"></i> マージ完了
+                </h3>
+                <button class="close-merge text-slate-400 p-1 mobile-touch-target flex items-center justify-center">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 text-xs space-y-3">
+                <div class="bg-green-950/30 border border-green-500/20 p-3 rounded flex gap-2">
+                    <i data-lucide="check-circle" class="w-5 h-5 text-green-500 shrink-0 mt-0.5"></i>
+                    <p class="text-slate-300 text-[11px]">手書き注釈を透明PNGレイヤーとしてPPTXの最前面にマージしました。</p>
+                </div>
+                <div class="bg-slate-950 p-3 rounded font-mono text-[10px] space-y-1 text-slate-400 border border-slate-800">
+                    <div>出力: <span class="text-orange-400 font-bold" id="out-filename">_annotated.pptx</span></div>
+                    <div>注釈スライド数: <span class="text-slate-200" id="out-slide-count">0</span></div>
+                    <div>APIステータス: <span class="text-slate-200" id="out-api-status">-</span></div>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 block mb-1">送信データ (JSON プレビュー):</span>
+                    <pre id="json-preview" class="bg-slate-950 p-2 rounded text-[9px] font-mono text-slate-400 max-h-24 overflow-y-auto border border-slate-800 whitespace-pre-wrap"></pre>
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-800 flex justify-end gap-2">
+                <button class="close-merge px-3 py-1.5 bg-slate-800 text-slate-300 rounded text-[11px] mobile-touch-target">閉じる</button>
+                <button id="btn-copy-json" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded text-[11px] flex items-center gap-1 mobile-touch-target">
+                    <i data-lucide="copy" class="w-3 h-3"></i> コピー
+                </button>
+                <button id="btn-download-png" class="px-3 py-1.5 bg-orange-600 text-white font-bold rounded text-[11px] mobile-touch-target">PNG保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ─────────────────────────────────────────────────────────
+    // CONSTANTS & MOCK DATA
+    // ─────────────────────────────────────────────────────────
+    const SLIDE_W = 960;
+    const SLIDE_H = 540;
+
+    const MOCK_SLIDES = [
+        {
+            id: 0, title: "1. 空間デザイン構成案",
+            elements: [
+                { type:"text", text:"ゾーニング検討案 (Aエリア・Bエリア)", x:3, y:4, size:20, weight:"bold", color:"#1e293b" },
+                { type:"rect", x:8, y:18, w:35, h:58, bg:"#eff6ff", stroke:"#2563eb", label:"メイン展示ゾーン (A)" },
+                { type:"rect", x:53, y:18, w:35, h:58, bg:"#f0fdf4", stroke:"#16a34a", label:"ワークショップエリア (B)" },
+                { type:"circle", cx:50, cy:47, r:9, bg:"#fffbeb", stroke:"#d97706", label:"共有ハブ" }
+            ]
+        },
+        {
+            id: 1, title: "2. 動線・視線の検討",
+            elements: [
+                { type:"text", text:"来場者導線シミュレーション", x:3, y:4, size:20, weight:"bold", color:"#1e293b" },
+                { type:"rect", x:5, y:25, w:15, h:45, bg:"#f8fafc", stroke:"#64748b", label:"エントランス" },
+                { type:"rect", x:30, y:18, w:20, h:28, bg:"#f8fafc", stroke:"#64748b", label:"企画展示1" },
+                { type:"rect", x:30, y:55, w:20, h:28, bg:"#f8fafc", stroke:"#64748b", label:"企画展示2" },
+                { type:"rect", x:68, y:25, w:22, h:45, bg:"#f8fafc", stroke:"#64748b", label:"メインシアター" }
+            ]
+        },
+        {
+            id: 2, title: "3. 什器配置ラフ",
+            elements: [
+                { type:"text", text:"什器（W1800×D600）の配置ラフ", x:3, y:4, size:20, weight:"bold", color:"#1e293b" },
+                { type:"grid", x:5, y:18, w:90, h:70, step:40 },
+                { type:"rect", x:25, y:38, w:50, h:22, bg:"#fff1f2", stroke:"#be123c", label:"メインカウンター（検討中）" }
+            ]
+        },
+        {
+            id: 3, title: "4. ブレインストーミング",
+            elements: [
+                { type:"text", text:"アイデア・メモ用紙", x:3, y:4, size:20, weight:"bold", color:"#1e293b" },
+                { type:"rect", x:3, y:15, w:94, h:78, bg:"#fefce8", stroke:"#ca8a04", label:"自由に書き出してください" }
+            ]
+        }
+    ];
+
+    // ─────────────────────────────────────────────────────────
+    // STATE
+    // ─────────────────────────────────────────────────────────
+    let currentSlide = 0;
+    let activeColor = "#dc2626";
+    let activeSize = 5;
+    let isEraserMode = false;
+    let isDrawing = false;
+    let inputMode = "auto";    // "auto" | "navigate"
+    let embedUrl = "";
+    let apiUrl = "http://localhost:5000";
+    let isLiveMode = false;
+
+    // Per-slide ImageData snapshots (null = blank)
+    const slideData = new Array(MOCK_SLIDES.length).fill(null);
+    // Undo stacks: Map<slideIndex, ImageData[]>
+    const undoStacks = new Map(MOCK_SLIDES.map((_, i) => [i, []]));
+
+    // Touch tracking for pan/zoom
+    const activePointers = new Map();   // pointerId → {x,y,type}
+    let pinch = null;  // {d0, scale0, panX0, panY0, mx0, my0}
+    let lastSingleTouch = null;
+
+    // Viewport
+    let vpScale = 1;
+    let vpPanX = 0;
+    let vpPanY = 0;
+
+    // Active pen pointer IDs
+    const penIds = new Set();
+
+    // ─────────────────────────────────────────────────────────
+    // DOM REFS
+    // ─────────────────────────────────────────────────────────
+    const slideContainer = document.getElementById("slide-container");
+    const penCanvas      = document.getElementById("pen-canvas");
+    const slideView      = document.getElementById("pptx-slide-view");
+    const workspaceEl    = document.getElementById("workspace");
+    const thumbListEl    = document.getElementById("thumbnail-list");
+    const zoomEl         = document.getElementById("zoom-level");
+    const liveContainer  = document.getElementById("pptx-live-view-container");
+    const liveIframe     = document.getElementById("live-powerpoint-iframe");
+    const liveMock       = document.getElementById("live-mock-overlay");
+    const ctx            = penCanvas.getContext("2d");
+
+    // ─────────────────────────────────────────────────────────
+    // INIT
+    // ─────────────────────────────────────────────────────────
+    function init() {
+        // Size canvas buffer
+        penCanvas.width  = SLIDE_W;
+        penCanvas.height = SLIDE_H;
+        slideContainer.style.width  = SLIDE_W + "px";
+        slideContainer.style.height = SLIDE_H + "px";
+
+        renderSlideContent(MOCK_SLIDES[currentSlide]);
+        buildThumbnails();
+        setupPointerEvents();
+        setupTouchEvents();
+        setupButtons();
+        setupPaste();
+
+        // Fit after layout
+        requestAnimationFrame(() => { requestAnimationFrame(fitToScreen); });
+
+        window.addEventListener("resize", fitToScreen);
+        window.addEventListener("orientationchange", () => setTimeout(fitToScreen, 300));
+
+        lucide.createIcons();
+
+        // Restore settings
+        try {
+            const s = JSON.parse(localStorage.getItem("pptpen_settings") || "{}");
+            if (s.apiUrl) { apiUrl = s.apiUrl; document.getElementById("input-api-url").value = apiUrl; }
+            if (s.embedUrl) { embedUrl = s.embedUrl; }
+        } catch(e) {}
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // VIEWPORT
+    // ─────────────────────────────────────────────────────────
+    function applyTransform() {
+        slideContainer.style.transform =
+            `translate(${vpPanX}px,${vpPanY}px) scale(${vpScale})`;
+        slideContainer.style.transformOrigin = "center center";
+        zoomEl.textContent = Math.round(vpScale * 100) + "%";
+    }
+
+    function fitToScreen() {
+        const r = workspaceEl.getBoundingClientRect();
+        const pad = 16;
+        vpScale = Math.min((r.width - pad*2) / SLIDE_W, (r.height - pad*2) / SLIDE_H);
+        vpPanX = 0;
+        vpPanY = 0;
+        applyTransform();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // SLIDE CONTENT RENDERING (HTML elements over white bg)
+    // ─────────────────────────────────────────────────────────
+    function renderSlideContent(slide) {
+        slideView.innerHTML = "";
+        if (!slide) return;
+
+        // Update live indicators
+        const t = document.getElementById("live-slide-title");
+        const ind = document.getElementById("live-slide-indicator");
+        if (t) t.textContent = slide.title;
+        if (ind) ind.textContent = `Slide ${slide.id + 1} / ${MOCK_SLIDES.length}`;
+
+        // Filename in header
+        document.getElementById("current-filename").textContent = slide.title;
+
+        slide.elements.forEach(el => {
+            const d = document.createElement("div");
+            d.style.position = "absolute";
+            d.style.boxSizing = "border-box";
+
+            switch (el.type) {
+                case "text":
+                    d.style.left   = el.x + "%";
+                    d.style.top    = el.y + "%";
+                    d.style.fontSize   = el.size + "px";
+                    d.style.fontWeight = el.weight || "normal";
+                    d.style.color      = el.color  || "#1e293b";
+                    d.style.whiteSpace = "pre-wrap";
+                    d.style.lineHeight = "1.3";
+                    d.textContent = el.text;
+                    break;
+
+                case "rect":
+                    d.style.left   = el.x + "%";
+                    d.style.top    = el.y + "%";
+                    d.style.width  = el.w + "%";
+                    d.style.height = el.h + "%";
+                    d.style.background   = el.bg     || "#f8fafc";
+                    d.style.border       = `2px solid ${el.stroke || "#64748b"}`;
+                    d.style.borderRadius = "6px";
+                    d.style.display    = "flex";
+                    d.style.alignItems = "center";
+                    d.style.justifyContent = "center";
+                    d.style.fontSize  = "12px";
+                    d.style.fontWeight = "500";
+                    d.style.color  = "#475569";
+                    d.style.textAlign = "center";
+                    d.style.padding = "6px";
+                    d.textContent = el.label || "";
+                    break;
+
+                case "circle":
+                    d.style.left   = (el.cx - el.r) + "%";
+                    d.style.top    = (el.cy - el.r) + "%";
+                    d.style.width  = (el.r * 2) + "%";
+                    d.style.height = (el.r * 2) + "%";
+                    d.style.background   = el.bg     || "#fffbeb";
+                    d.style.border       = `2px solid ${el.stroke || "#d97706"}`;
+                    d.style.borderRadius = "50%";
+                    d.style.display    = "flex";
+                    d.style.alignItems = "center";
+                    d.style.justifyContent = "center";
+                    d.style.fontSize  = "11px";
+                    d.style.color  = "#78716c";
+                    d.style.textAlign = "center";
+                    d.style.padding = "4px";
+                    d.textContent = el.label || "";
+                    break;
+
+                case "grid":
+                    d.style.left   = el.x + "%";
+                    d.style.top    = el.y + "%";
+                    d.style.width  = el.w + "%";
+                    d.style.height = el.h + "%";
+                    d.style.backgroundImage =
+                        "linear-gradient(to right,#e2e8f0 1px,transparent 1px)," +
+                        "linear-gradient(to bottom,#e2e8f0 1px,transparent 1px)";
+                    d.style.backgroundSize = `${el.step}px ${el.step}px`;
+                    d.style.border = "1px solid #cbd5e1";
+                    break;
+            }
+            slideView.appendChild(d);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // CANVAS COORDINATE TRANSFORM
+    // ─────────────────────────────────────────────────────────
+    function toCanvas(cx, cy) {
+        const r = penCanvas.getBoundingClientRect();
+        return {
+            x: (cx - r.left) * (SLIDE_W / r.width),
+            y: (cy - r.top)  * (SLIDE_H / r.height)
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // DRAWING
+    // ─────────────────────────────────────────────────────────
+    function applyStyle(pressure) {
+        const p = Math.max(0.1, pressure || 0.5);
+        const w = activeSize * (0.6 + p * 0.4);
+        ctx.lineCap  = "round";
+        ctx.lineJoin = "round";
+        if (isEraserMode) {
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.strokeStyle = "rgba(0,0,0,1)";
+            ctx.lineWidth   = w * 4;
+            ctx.globalAlpha = 1;
+        } else {
+            ctx.globalCompositeOperation = "source-over";
+            ctx.strokeStyle = activeColor;
+            ctx.lineWidth   = w;
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    let strokePoints = [];
+
+    function beginStroke(x, y, pressure) {
+        isDrawing = true;
+        pushUndo();
+        strokePoints = [{ x, y }];
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        applyStyle(pressure);
+        setPenStatus("描画中", true);
+    }
+
+    function extendStroke(x, y, pressure) {
+        if (!isDrawing) return;
+        strokePoints.push({ x, y });
+        applyStyle(pressure);
+        const n = strokePoints.length;
+        if (n >= 3) {
+            const a = strokePoints[n - 2];
+            const b = strokePoints[n - 1];
+            ctx.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    }
+
+    function finishStroke() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        ctx.stroke();
+        ctx.beginPath();
+        strokePoints = [];
+        saveCurrentSlideData();
+        refreshThumbnail(currentSlide);
+        setPenStatus("待機中", false);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // POINTER EVENTS  (pen / mouse → draw; touch → skip to touch handler)
+    // ─────────────────────────────────────────────────────────
+    function setupPointerEvents() {
+        penCanvas.addEventListener("pointerdown",   onPenDown,   { passive: false });
+        penCanvas.addEventListener("pointermove",   onPenMove,   { passive: false });
+        penCanvas.addEventListener("pointerup",     onPenUp,     { passive: false });
+        penCanvas.addEventListener("pointercancel", onPenUp,     { passive: false });
+        penCanvas.addEventListener("pointerleave",  onPenLeave,  { passive: false });
+    }
+
+    function onPenDown(e) {
+        e.preventDefault();
+        if (e.pointerType === "touch") return;  // handled by touch layer
+        if (inputMode === "navigate") return;
+
+        const forceErase = (e.buttons & 32) !== 0;  // S Pen eraser end
+        penCanvas.setPointerCapture(e.pointerId);
+        penIds.add(e.pointerId);
+
+        const saved = isEraserMode;
+        if (forceErase) isEraserMode = true;
+        const p = toCanvas(e.clientX, e.clientY);
+        beginStroke(p.x, p.y, e.pressure);
+        if (forceErase) isEraserMode = saved;
+    }
+
+    function onPenMove(e) {
+        e.preventDefault();
+        if (e.pointerType === "touch") return;
+        if (!penIds.has(e.pointerId) || !isDrawing) return;
+
+        const forceErase = (e.buttons & 32) !== 0;
+        const saved = isEraserMode;
+        if (forceErase) isEraserMode = true;
+        const p = toCanvas(e.clientX, e.clientY);
+        extendStroke(p.x, p.y, e.pressure);
+        if (forceErase) isEraserMode = saved;
+    }
+
+    function onPenUp(e) {
+        penIds.delete(e.pointerId);
+        if (penIds.size === 0) finishStroke();
+    }
+
+    function onPenLeave(e) {
+        if (penIds.has(e.pointerId)) {
+            penIds.delete(e.pointerId);
+            if (penIds.size === 0) finishStroke();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // TOUCH EVENTS  (finger pan & pinch-zoom on workspace)
+    // ─────────────────────────────────────────────────────────
+    function setupTouchEvents() {
+        workspaceEl.addEventListener("touchstart",  onTouchStart, { passive: false });
+        workspaceEl.addEventListener("touchmove",   onTouchMove,  { passive: false });
+        workspaceEl.addEventListener("touchend",    onTouchEnd,   { passive: false });
+        workspaceEl.addEventListener("touchcancel", onTouchEnd,   { passive: false });
+    }
+
+    function onTouchStart(e) {
+        e.preventDefault();
+        if (isDrawing) return;  // pen active — block touch
+
+        for (const t of e.changedTouches) {
+            activePointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+
+        if (activePointers.size >= 2) {
+            const pts = [...activePointers.values()];
+            const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+            const d  = Math.hypot(dx, dy);
+            pinch = {
+                d0: d, scale0: vpScale,
+                panX0: vpPanX, panY0: vpPanY,
+                mx0: (pts[0].x + pts[1].x) / 2,
+                my0: (pts[0].y + pts[1].y) / 2
+            };
+            lastSingleTouch = null;
+        } else if (activePointers.size === 1) {
+            const [pt] = [...activePointers.values()];
+            lastSingleTouch = { x: pt.x, y: pt.y };
+            pinch = null;
+        }
+    }
+
+    function onTouchMove(e) {
+        e.preventDefault();
+        if (isDrawing) return;
+
+        for (const t of e.changedTouches) {
+            activePointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+
+        const pts = [...activePointers.values()];
+
+        if (pts.length >= 2 && pinch) {
+            const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+            const d  = Math.hypot(dx, dy);
+            const mx = (pts[0].x + pts[1].x) / 2;
+            const my = (pts[0].y + pts[1].y) / 2;
+
+            vpScale = Math.max(0.2, Math.min(8, pinch.scale0 * (d / pinch.d0)));
+            vpPanX  = pinch.panX0 + (mx - pinch.mx0);
+            vpPanY  = pinch.panY0 + (my - pinch.my0);
+            applyTransform();
+
+        } else if (pts.length === 1 && lastSingleTouch) {
+            const pt = pts[0];
+            vpPanX += pt.x - lastSingleTouch.x;
+            vpPanY += pt.y - lastSingleTouch.y;
+            lastSingleTouch = { x: pt.x, y: pt.y };
+            applyTransform();
+        }
+    }
+
+    function onTouchEnd(e) {
+        for (const t of e.changedTouches) activePointers.delete(t.identifier);
+        if (activePointers.size < 2) pinch = null;
+        if (activePointers.size === 0) { lastSingleTouch = null; }
+        else if (activePointers.size === 1) {
+            const [pt] = [...activePointers.values()];
+            lastSingleTouch = { x: pt.x, y: pt.y };
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // UNDO / REDO
+    // ─────────────────────────────────────────────────────────
+    function pushUndo() {
+        const stack = undoStacks.get(currentSlide);
+        stack.push(ctx.getImageData(0, 0, SLIDE_W, SLIDE_H));
+        if (stack.length > 25) stack.shift();
+    }
+
+    function undo() {
+        const stack = undoStacks.get(currentSlide);
+        if (!stack || stack.length === 0) return;
+        ctx.putImageData(stack.pop(), 0, 0);
+        saveCurrentSlideData();
+        refreshThumbnail(currentSlide);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // SLIDE MANAGEMENT
+    // ─────────────────────────────────────────────────────────
+    function saveCurrentSlideData() {
+        slideData[currentSlide] = ctx.getImageData(0, 0, SLIDE_W, SLIDE_H);
+    }
+
+    function loadSlide(index) {
+        if (index < 0 || index >= MOCK_SLIDES.length) return;
+        saveCurrentSlideData();
+
+        currentSlide = index;
+        renderSlideContent(MOCK_SLIDES[currentSlide]);
+
+        ctx.clearRect(0, 0, SLIDE_W, SLIDE_H);
+        if (slideData[currentSlide]) {
+            ctx.putImageData(slideData[currentSlide], 0, 0);
+        }
+
+        document.querySelectorAll(".thumb-item").forEach((el, i) => {
+            el.classList.toggle("ring-2",             i === currentSlide);
+            el.classList.toggle("ring-orange-500",    i === currentSlide);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // THUMBNAILS
+    // ─────────────────────────────────────────────────────────
+    function buildThumbnails() {
+        thumbListEl.innerHTML = "";
+        MOCK_SLIDES.forEach((slide, i) => {
+            const wrap = document.createElement("div");
+            wrap.className = `thumb-item cursor-pointer rounded overflow-hidden border border-slate-700 hover:border-slate-500 transition ${i === currentSlide ? "ring-2 ring-orange-500" : ""}`;
+            wrap.dataset.index = i;
+            wrap.onclick = () => loadSlide(i);
+
+            const cv = document.createElement("canvas");
+            cv.width = 140; cv.height = 79;
+            cv.style.display = "block"; cv.style.width = "100%";
+            wrap.appendChild(cv);
+
+            const lbl = document.createElement("div");
+            lbl.className = "bg-slate-800 text-slate-300 text-[9px] px-1.5 py-0.5 truncate";
+            lbl.textContent = slide.title;
+            wrap.appendChild(lbl);
+
+            thumbListEl.appendChild(wrap);
+            refreshThumbnail(i);
+        });
+    }
+
+    function refreshThumbnail(index) {
+        const wrap = thumbListEl.querySelector(`[data-index="${index}"]`);
+        if (!wrap) return;
+        const cv = wrap.querySelector("canvas");
+        if (!cv) return;
+        const tc = cv.getContext("2d");
+        tc.clearRect(0, 0, 140, 79);
+        tc.fillStyle = "#ffffff";
+        tc.fillRect(0, 0, 140, 79);
+
+        const data = index === currentSlide
+            ? ctx.getImageData(0, 0, SLIDE_W, SLIDE_H)
+            : slideData[index];
+
+        if (data) {
+            const tmp = document.createElement("canvas");
+            tmp.width = SLIDE_W; tmp.height = SLIDE_H;
+            tmp.getContext("2d").putImageData(data, 0, 0);
+            tc.drawImage(tmp, 0, 0, 140, 79);
+        } else {
+            // Show slide number placeholder
+            const colors = ["#dbeafe","#dcfce7","#fff7ed","#fef9c3"];
+            tc.fillStyle = colors[index % colors.length];
+            tc.fillRect(0, 0, 140, 79);
+            tc.fillStyle = "#64748b";
+            tc.font = "bold 10px sans-serif";
+            tc.textAlign = "center";
+            tc.fillText(`スライド ${index + 1}`, 70, 42);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // IMAGE PASTE
+    // ─────────────────────────────────────────────────────────
+    function setupPaste() {
+        window.addEventListener("paste", e => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type.startsWith("image/")) {
+                    pasteImage(item.getAsFile());
+                    break;
+                }
+            }
+        });
+
+        document.getElementById("image-file-input").addEventListener("change", e => {
+            if (e.target.files[0]) pasteImage(e.target.files[0]);
+            e.target.value = "";
+        });
+    }
+
+    function pasteImage(blob) {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            pushUndo();
+            const s = Math.min(SLIDE_W / img.width * 0.55, SLIDE_H / img.height * 0.55);
+            const w = img.width * s, h = img.height * s;
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+            ctx.drawImage(img, (SLIDE_W - w) / 2, (SLIDE_H - h) / 2, w, h);
+            URL.revokeObjectURL(url);
+            saveCurrentSlideData();
+            refreshThumbnail(currentSlide);
+        };
+        img.src = url;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // EXPORT / MERGE
+    // ─────────────────────────────────────────────────────────
+    async function doMerge() {
+        saveCurrentSlideData();
+
+        const annotations = [];
+        for (let i = 0; i < MOCK_SLIDES.length; i++) {
+            const data = slideData[i];
+            if (!data) continue;
+            // Skip empty slides
+            let hasPixels = false;
+            for (let j = 3; j < data.data.length; j += 4) {
+                if (data.data[j] > 5) { hasPixels = true; break; }
+            }
+            if (!hasPixels) continue;
+
+            const tmp = document.createElement("canvas");
+            tmp.width = SLIDE_W; tmp.height = SLIDE_H;
+            tmp.getContext("2d").putImageData(data, 0, 0);
+            annotations.push({
+                slide_index: i,
+                slide_title: MOCK_SLIDES[i].title,
+                png_base64: tmp.toDataURL("image/png").split(",")[1]
+            });
+        }
+
+        const previewList = annotations.map(a => ({
+            slide_index: a.slide_index,
+            slide_title: a.slide_title,
+            png_base64: `[PNG ${Math.round(a.png_base64.length * 0.75 / 1024)}KB]`
+        }));
+
+        document.getElementById("out-filename").textContent = "presentation_annotated.pptx";
+        document.getElementById("out-slide-count").textContent = annotations.length;
+        document.getElementById("json-preview").textContent =
+            JSON.stringify({ annotations: previewList }, null, 2);
+
+        let apiStatus = "バックエンド未接続（デモ）";
+        if (annotations.length > 0) {
+            try {
+                const r = await fetch(`${apiUrl}/merge`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ annotations })
+                });
+                if (r.ok) {
+                    const j = await r.json();
+                    apiStatus = `✓ ${j.message}`;
+                } else {
+                    apiStatus = `HTTP ${r.status}`;
+                }
+            } catch (err) {
+                apiStatus = `未接続: ${err.message.slice(0, 40)}`;
+            }
+        }
+        document.getElementById("out-api-status").textContent = apiStatus;
+        document.getElementById("merge-modal").classList.remove("hidden");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // SETTINGS
+    // ─────────────────────────────────────────────────────────
+    function applyViewMode(live) {
+        isLiveMode = live;
+        if (live) {
+            liveContainer.classList.remove("hidden");
+            slideView.style.display = "none";
+            if (embedUrl) {
+                liveIframe.src = embedUrl;
+                liveIframe.classList.remove("hidden");
+                liveMock.classList.add("hidden");
+            } else {
+                liveIframe.classList.add("hidden");
+                liveMock.classList.remove("hidden");
+            }
+        } else {
+            liveContainer.classList.add("hidden");
+            slideView.style.display = "";
+        }
+        // Sync buttons
+        document.getElementById("view-static").classList.toggle("bg-orange-600", !live);
+        document.getElementById("view-static").classList.toggle("text-white",     !live);
+        document.getElementById("view-static").classList.toggle("text-slate-500",  live);
+        document.getElementById("view-live").classList.toggle("bg-orange-600",     live);
+        document.getElementById("view-live").classList.toggle("text-white",        live);
+        document.getElementById("view-live").classList.toggle("text-slate-500",   !live);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // UI HELPERS
+    // ─────────────────────────────────────────────────────────
+    function setPenStatus(text, active) {
+        document.getElementById("pen-status").textContent = text;
+        document.getElementById("pen-indicator").className =
+            `w-2 h-2 rounded-full inline-block ${active ? "bg-orange-500 animate-pulse" : "bg-green-500"}`;
+    }
+
+    function setColor(color) {
+        activeColor = color;
+        isEraserMode = false;
+        document.querySelectorAll(".color-btn").forEach(b => {
+            const match = b.dataset.color === color;
+            b.style.borderColor = match ? "white" : "transparent";
+        });
+        document.getElementById("btn-eraser").classList.remove("bg-red-800","text-red-200");
+        document.getElementById("btn-eraser").classList.add("bg-slate-800","text-slate-300");
+    }
+
+    function setSize(size) {
+        activeSize = size;
+        document.querySelectorAll(".size-btn").forEach(b => {
+            const match = parseInt(b.dataset.size) === size;
+            b.classList.toggle("bg-slate-800",  match);
+            b.classList.toggle("text-white",     match);
+            b.classList.toggle("font-bold",      match);
+            b.classList.toggle("text-slate-400", !match);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // BUTTON SETUP
+    // ─────────────────────────────────────────────────────────
+    function setupButtons() {
+        // Sidebar toggle
+        const sidebar = document.getElementById("sidebar");
+        document.getElementById("btn-toggle-sidebar").onclick = () => {
+            sidebar.classList.toggle("hidden-mobile");
+        };
+        document.getElementById("btn-close-sidebar").onclick = () => {
+            sidebar.classList.add("hidden-mobile");
+        };
+
+        // Input mode
+        document.getElementById("mode-auto").onclick = () => {
+            inputMode = "auto";
+            penCanvas.style.pointerEvents = "auto";
+            document.getElementById("mode-auto").classList.add("bg-orange-600","text-white");
+            document.getElementById("mode-auto").classList.remove("text-slate-500");
+            document.getElementById("mode-navigate").classList.remove("bg-orange-600","text-white");
+            document.getElementById("mode-navigate").classList.add("text-slate-500");
+        };
+        document.getElementById("mode-navigate").onclick = () => {
+            inputMode = "navigate";
+            penCanvas.style.pointerEvents = "none";
+            document.getElementById("mode-navigate").classList.add("bg-orange-600","text-white");
+            document.getElementById("mode-navigate").classList.remove("text-slate-500");
+            document.getElementById("mode-auto").classList.remove("bg-orange-600","text-white");
+            document.getElementById("mode-auto").classList.add("text-slate-500");
+        };
+
+        // Zoom
+        document.getElementById("btn-reset-zoom").onclick = fitToScreen;
+
+        // Colors
+        document.querySelectorAll(".color-btn").forEach(b => {
+            b.onclick = () => setColor(b.dataset.color);
+        });
+        const customInput = document.getElementById("custom-color-input");
+        customInput.onchange = () => setColor(customInput.value);
+        customInput.oninput  = () => setColor(customInput.value);
+
+        // Sizes
+        document.querySelectorAll(".size-btn").forEach(b => {
+            b.onclick = () => setSize(parseInt(b.dataset.size));
+        });
+
+        // Eraser
+        document.getElementById("btn-eraser").onclick = () => {
+            isEraserMode = !isEraserMode;
+            document.getElementById("btn-eraser").classList.toggle("bg-red-800",   isEraserMode);
+            document.getElementById("btn-eraser").classList.toggle("text-red-200", isEraserMode);
+            document.getElementById("btn-eraser").classList.toggle("bg-slate-800", !isEraserMode);
+            document.getElementById("btn-eraser").classList.toggle("text-slate-300",!isEraserMode);
+        };
+
+        // Undo
+        document.getElementById("btn-undo").onclick = undo;
+
+        // Clear
+        document.getElementById("btn-clear").onclick = () => {
+            if (!confirm("このスライドの注釈をすべて消去しますか？")) return;
+            pushUndo();
+            ctx.clearRect(0, 0, SLIDE_W, SLIDE_H);
+            saveCurrentSlideData();
+            refreshThumbnail(currentSlide);
+        };
+
+        // Image paste button
+        document.getElementById("btn-paste-image").onclick = () => {
+            document.getElementById("image-file-input").click();
+        };
+
+        // Merge
+        document.getElementById("btn-merge").onclick = doMerge;
+
+        // Settings open
+        document.getElementById("btn-settings").onclick = () => {
+            document.getElementById("input-embed-url").value = embedUrl;
+            document.getElementById("input-api-url").value   = apiUrl;
+            document.getElementById("settings-modal").classList.remove("hidden");
+        };
+        document.querySelectorAll(".close-settings").forEach(b => {
+            b.onclick = () => document.getElementById("settings-modal").classList.add("hidden");
+        });
+
+        document.getElementById("btn-demo-url").onclick = () => {
+            document.getElementById("input-embed-url").value =
+                "https://onedrive.live.com/embed?cid=DEMO&resid=DEMO&authkey=DEMO&em=2";
+        };
+        document.getElementById("btn-clear-url").onclick = () => {
+            document.getElementById("input-embed-url").value = "";
+        };
+
+        document.getElementById("btn-save-settings").onclick = () => {
+            embedUrl = document.getElementById("input-embed-url").value.trim();
+            apiUrl   = document.getElementById("input-api-url").value.trim() || "http://localhost:5000";
+            try { localStorage.setItem("pptpen_settings", JSON.stringify({ apiUrl, embedUrl })); } catch(e) {}
+            if (isLiveMode) applyViewMode(true);
+            document.getElementById("settings-modal").classList.add("hidden");
+        };
+
+        document.getElementById("view-static").onclick = () => applyViewMode(false);
+        document.getElementById("view-live").onclick   = () => applyViewMode(true);
+
+        // Merge modal
+        document.querySelectorAll(".close-merge").forEach(b => {
+            b.onclick = () => document.getElementById("merge-modal").classList.add("hidden");
+        });
+
+        document.getElementById("btn-copy-json").onclick = async () => {
+            const text = document.getElementById("json-preview").textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                const btn = document.getElementById("btn-copy-json");
+                const orig = btn.innerHTML;
+                btn.textContent = "✓ コピー済";
+                setTimeout(() => { btn.innerHTML = orig; lucide.createIcons(); }, 2000);
+            } catch(e) {}
+        };
+
+        document.getElementById("btn-download-png").onclick = () => {
+            saveCurrentSlideData();
+            const data = slideData[currentSlide];
+            if (!data) return;
+            const tmp = document.createElement("canvas");
+            tmp.width = SLIDE_W; tmp.height = SLIDE_H;
+            tmp.getContext("2d").putImageData(data, 0, 0);
+            const a = document.createElement("a");
+            a.href = tmp.toDataURL("image/png");
+            a.download = `slide${currentSlide + 1}_annotation.png`;
+            a.click();
+        };
+
+        // Keyboard shortcuts
+        document.addEventListener("keydown", e => {
+            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+            if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
+            if (e.key === "0") fitToScreen();
+            if (e.key === "ArrowLeft")  loadSlide(currentSlide - 1);
+            if (e.key === "ArrowRight") loadSlide(currentSlide + 1);
+            if (e.key === "e") {
+                document.getElementById("btn-eraser").click();
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // BOOT
+    // ─────────────────────────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", init);
+    </script>
+</body>
+</html>
