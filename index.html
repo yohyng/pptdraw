@@ -519,16 +519,21 @@
         strokePoints.push({ x, y });
         applyStyle(pressure);
         const n = strokePoints.length;
+        // Start next segment from where this one actually ends (midpoint),
+        // not from the raw pointer position — otherwise gaps appear as dots.
+        let nextX = x, nextY = y;
         if (n >= 3) {
             const a = strokePoints[n - 2];
             const b = strokePoints[n - 1];
-            ctx.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+            nextX = (a.x + b.x) / 2;
+            nextY = (a.y + b.y) / 2;
+            ctx.quadraticCurveTo(a.x, a.y, nextX, nextY);
         } else {
             ctx.lineTo(x, y);
         }
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(x, y);
+        ctx.moveTo(nextX, nextY);
     }
 
     function finishStroke() {
